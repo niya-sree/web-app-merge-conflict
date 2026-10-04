@@ -49,6 +49,6 @@ jobs:
             docker stop nginx || true
             docker rm nginx || true
 
-            docker run -d --name web-app -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/nginx:${{ github.sha }}
+          docker run -d --name web-app -p 8080:80 ${{ secrets.DOCKER_USERNAME }}/nginx:${{ github.sha }}
             docker ps
 
