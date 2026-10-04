@@ -33,4 +33,27 @@ CREATE BRANCHES, AND DEMONSTRATE MERGE CONFLICT RESOLUTION
 # verify the logs
 1. git log --oneline --graph --all
 
+# TASK:2
+
+# GitHub Actions Workflow
+1. Create .github/workflows directory
+2. Create and configure steps in yaml file
+3. Create docker file to build image
+4. Add environment variables in github secrets
+5. Deploy the web app on EC2 server
+6. Access web application locally using curl
+7. Access application on browser using http://ec2-ip
+# Verify 
+1. docker ps 
+2. docker image ls
+# Workflow
+1. git push
+2. Github actions triggers workflow
+3. Checkout code
+4. Login docker hub
+5. Build image
+6. Tag image
+7. Push image
+8. Pull image
+9. Deploy
 # END
