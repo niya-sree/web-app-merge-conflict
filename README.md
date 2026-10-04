@@ -2,7 +2,7 @@
 CREATE BRANCHES AND DEMONSTRATE MERGE CONFLICT RESOLUTION
 # Branches
 1. `main` - Main development branch
-2. `feature/update-readme` - Feature branch
+2. `feature` - Feature branch
 # Create file in main branch
 1. Create repository in GitHub Account and clone the repository
 2. nano <file-name>
