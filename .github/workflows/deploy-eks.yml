@@ -22,6 +22,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v6
 
+      - name: Debug OIDC
+        uses: github/actions-oidc-debugger@main
+
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.2
         with:
@@ -42,7 +46,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
-             -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+             -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
 
           docker push \
              $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
@@ -50,7 +54,7 @@ jobs:
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
-            --region $AWS_REGION
+            --region $AWS_REGION \
             --name $EKS_CLUSTER
 
       - name: Deploy to EKS
