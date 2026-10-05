@@ -58,6 +58,7 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
+          kubectl apply -f k8s/namespace.yml
           kubectl -f apply deployment.yml -n microservices
           kubectl -f apply service.yml -n microservices
 
