@@ -338,6 +338,23 @@ aws eks associate-access-policy \
 2. https://external-ip
 # Access locally
 1. curl http://external-ip
+
+# TASK 4
+secure devops practices
+# Workflow
+1. CI/CD Pipeline Configuration
+2. The pipeline performs:
+3. Application build and unit tests.
+4. SonarQube static code/security analysis.
+5. Application startup.
+6. OWASP ZAP dynamic security scan.
+7. Upload of scan reports as CI artifacts.
+8.Pipeline failure when configured security thresholds are exceeded.
+# Create a free tier account on sonarqube cloud
+1. Connect with GitHub and import project
+2. Add sonarqube token to github secrets.
+3. Add url to the yaml file.
+4. Run the pipeline
 # END
 
 

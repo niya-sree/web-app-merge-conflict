@@ -1,0 +1,219 @@
+name: Secure CI/CD Pipeline to EKS
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: nginx-app
+  EKS_CLUSTER: my-cluster
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+
+  # ==========================================================
+  # 1. SONARQUBE SECURITY SCAN
+  # ==========================================================
+  sonarqube:
+    name: SonarQube Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.projectKey=niya-sree_web-app-merge-conflict
+            -Dsonar.organization=niya-sree
+
+  # ==========================================================
+  # 2. BUILD DOCKER IMAGE
+  # ==========================================================
+  security-scan:
+    name: Build and OWASP ZAP Scan
+    runs-on: ubuntu-latest
+
+    needs: sonarqube
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t nginx-app:${IMAGE_TAG} .
+
+      - name: Start application
+        run: |
+          docker run -d \
+            --name nginx-security-test \
+            -p 8080:80 \
+            nginx-app:${IMAGE_TAG}
+
+      - name: Wait for application
+        run: |
+          echo "Waiting for Nginx..."
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080 > /dev/null; then
+              echo "Application is ready"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Application failed to start"
+          docker logs nginx-security-test
+          exit 1
+
+      - name: Test application
+        run: |
+          curl -f http://127.0.0.1:8080
+
+      # ======================================================
+      # OWASP ZAP
+      # ======================================================
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          target: "http://127.0.0.1:8080"
+          cmd_options: "-a"
+          allow_issue_writing: false
+          fail_action: true
+
+      # ======================================================
+      # SAVE SECURITY REPORT
+      # ======================================================
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-security-report
+          path: |
+            report_html.html
+            report_md.md
+            report_xml.xml
+
+      - name: Stop test container
+        if: always()
+        run: |
+          docker stop nginx-security-test || true
+          docker rm nginx-security-test || true
+
+  # ==========================================================
+  # 3. PUSH IMAGE TO ECR
+  # ==========================================================
+  push-ecr:
+    name: Push Docker Image to ECR
+    runs-on: ubuntu-latest
+
+    needs:
+      - sonarqube
+      - security-scan
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build \
+            -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+
+      - name: Push Docker image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker push \
+            $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  # ==========================================================
+  # 4. DEPLOY TO EKS
+  # ==========================================================
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+
+    needs: push-ecr
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: |
+          aws sts get-caller-identity
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $EKS_CLUSTER
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy Kubernetes resources
+        run: |
+          kubectl apply -f k8s/namespace.yml
+          kubectl apply -f k8s/deployment.yml -n microservices
+          kubectl apply -f k8s/service.yml -n microservices
+
+      - name: Update deployment image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          kubectl set image deployment/nginx-web-app \
+            nginx-app=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -n microservices
+
+      - name: Wait for deployment
+        run: |
+          kubectl rollout status \
+            deployment/nginx-web-app \
+            -n microservices \
+            --timeout=180s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n microservices
+          kubectl get service -n microservices
