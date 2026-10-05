@@ -265,9 +265,9 @@ deploy to AWS EKS
      --client-id-list sts.amazonaws.com \
      --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
 # Create the IAM policy
-1. aws iam create-policy \
-  --policy-name GitHubActionsECRPolicy \
-  --policy-document file://github-actions-ecr-policy.json
+1. aws iam create-role \
+  --role-name github-actions-deploy \
+  --assume-role-policy-document file://github-oidc-trust-policy.json
 # verify
 1. aws iam list-open-id-connect-providers
 2. aws eks describe-cluster \
@@ -276,56 +276,59 @@ deploy to AWS EKS
   --query 'cluster.accessConfig' \
   --output json
 # Create the GitHub Actions trust policy
-1. nano github-actions-trust-policy.json
+1. nano github-oidc-trust-policy.json
 # Create the IAM role
 1. aws iam create-role \
-     --role-name github-deploy \
-     --assume-role-policy-document file://github-actions-trust-policy.json
+     --role-name github-actions-deploy \
+     --assume-role-policy-document file://github-oidc-trust-policy.json
 # Verify role
 1. aws iam get-role \
-     --role-name github-deploy \
+     --role-name github-actions-deploy \
      --query 'Role.Arn' \
      --output text
 # Update the role
 1. aws iam update-assume-role-policy \
-  --role-name github-deploy \
-  --policy-document file://github-actions-trust-policy.json
+  --role-name github-actions-deploy \
+  --policy-document file://github-oidc-trust-policy.json
 # Give the role ECR permissions
 1. aws iam create-policy \
   --policy-name GitHubActionsECRPushPolicy \
-  --policy-document file://github-actions-ecr-policy.json
+  --policy-document file://ecr-policy.json
 # attach it to the IAM role
 1. aws iam attach-role-policy \
-  --role-name github-deploy \
+  --role-name github-actions-deploy \
   --policy-arn arn:aws:iam::443920089274:policy/GitHubActionsECRPushPolicy
-# Attach AWS IAM Permissions to the Role
+# EKS ppermissions
 1. aws iam put-role-policy \
-    --role-name github-deploy \
+    --role-name github-actions-deploy \
     --policy-name eks-describe-permissions \
-    --policy-document file://github-actions-ecr-eks-policy.json
-# Give the role permission to authenticate to EKS
+    --policy-document file://ecr-policy.json
+2. aws iam create-policy \
+  --policy-name eks-describe-permissions \
+  --policy-document file://eks-policy.json
+# Give the GitHub role permission to authenticate to EKS
 1. aws eks create-access-entry \
   --cluster-name my-cluster \
-  --principal-arn arn:aws:iam::443920089274:role/github-deploy \
+  --principal-arn arn:aws:iam::443920089274:role/github-actions-deploy \
   --type STANDARD \
   --region us-east-1
 # Then associate an EKS access policy:
 aws eks associate-access-policy \
   --cluster-name my-cluster \
-  --principal-arn arn:aws:iam::443920089274:role/github-deploy \
+  --principal-arn arn:aws:iam::443920089274:role/github-actions-deploy \
   --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
   --access-scope type=namespace,namespaces=microservices \
   --region us-east-1
 # Verify the access entry
 1. aws eks describe-access-entry \
   --cluster-name my-cluster \
-  --principal-arn arn:aws:iam::443920089274:role/github-deploy \
+  --principal-arn arn:aws:iam::443920089274:role/github-actions-deploy \
   --region us-east-1
 2. You should see the role associated with the cluster.
 # Add the GitHub secret
 1. AWS_ROLE_ARN
 # Create your workflow
-1. nano .github/workflows/deploy.yml
+1. nano .github/workflows/deploy-eks.yml
 2. Push the code
 3. git add .
 4. git commit -m "Deploy nginx to EKS with GitHub Actions"
@@ -334,7 +337,7 @@ aws eks associate-access-policy \
 1. check Repository
   → Actions
 # Access web application on browser
-1. kubectl get svc nginx-lb
+1. kubectl get svc web-app-lb -n microservices
 2. https://external-ip
 # Access locally
 1. curl http://external-ip
