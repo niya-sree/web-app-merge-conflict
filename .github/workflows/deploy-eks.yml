@@ -71,8 +71,8 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           kubectl apply -f k8s/namespace.yml
-          kubectl -f apply k8s/deployment.yml -n microservices
-          kubectl -f apply k8s/service.yml -n microservices
+          kubectl apply -f k8s/deployment.yml -n microservices
+          kubectl apply -f k8s/service.yml -n microservices
 
           kubectl set image deployment/nginx-web-app \
             nginx-app=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
