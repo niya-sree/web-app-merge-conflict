@@ -1,0 +1,344 @@
+# TASK 3
+
+# web-app-merge-conflict
+deploy to AWS EKS
+# deploy an application to AWS EKS, the typical flow is:
+1. Create the ECR repository.
+2. Create or use an EKS cluster.
+3. Configure kubectl to access the cluster.
+4. Create Kubernetes Deployment and Service manifests.
+5. Apply them to EKS.
+6. Verify the rollout and expose the application.
+# Architecture
+1. GitHub
+2.   ↓
+3. GitHub Actions
+4.   ↓
+5. Docker build
+6.   ↓
+7. Amazon ECR
+8.   ↓
+9. Amazon EKS
+10.  ↓
+11. Kubernetes Deployment
+12.  ↓
+13. Kubernetes Service / AWS Load Balancer
+# Your components
+1. Amazon ECR — stores web-app-merge-conflict Docker images.
+2. Amazon EKS — Kubernetes control plane.
+3. EKS Managed Node Group — runs your Pods.
+4. GitHub Actions + AWS OIDC — builds, pushes, and deploys.
+# Prerequisites
+1. docker --version
+2. aws --version
+3. kubectl version --client
+4. eksctl version
+# Install aws-cli
+1. sudo apt install aws-cli -y
+2. curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+3. sudo apt update
+4. sudo apt install -y unzip
+5. unzip -q awscliv2.zip
+6. sudo ./aws/install
+# Install kubectl
+1. curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+2. chmod +x kubectl
+3. sudo mv kubectl /usr/local/bin/
+4. kubectl version --client
+# Install eksctl
+1. curl --silent --location \
+     "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" \
+     | tar xz -C /tmp
+2. sudo mv /tmp/eksctl /usr/local/bin
+3. eksctl version
+# Install Docker
+1. sudo apt remove -y docker.io docker-compose docker-doc podman-docker containerd runc
+2. sudo apt update
+3. sudo apt install -y ca-certificates curl
+4. sudo install -m 0755 -d /etc/apt/keyrings
+5. sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+     -o /etc/apt/keyrings/docker.asc
+6. sudo chmod a+r /etc/apt/keyrings/docker.asc
+# Add Docker repository:
+1. echo \
+     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+     $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+2. sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+3. sudo apt update
+4. sudo apt install -y \
+     docker-ce \
+     docker-ce-cli \
+     containerd.io \
+     docker-buildx-plugin \
+     docker-compose-plugin
+# Start Docker:
+1. sudo systemctl enable --now docker
+# Verify:
+1. docker --version
+# Allow your user to run Docker without sudo
+1. sudo usermod -aG docker $USER
+# Verify everything
+1. aws --version
+2. kubectl version --client
+3. eksctl version
+4. docker --version
+5. docker compose version
+# Configure AWS
+1. aws sts get-caller-identity
+# Set up the region
+1. aws configure set region us-east-1
+# Create an ECR repository
+1. aws ecr create-repository \
+     --repository-name nginx-app \
+     --region us-east-1
+2. AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+     --query Account \
+     --output text)
+3. echo $AWS_ACCOUNT_ID
+# Test locally
+1. aws ecr get-login-password \
+     --region us-east-1 | \
+   docker login \
+     --username AWS \
+     --password-stdin \
+     $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+# Tag the image
+1. docker tag nginx-app:latest \
+     $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/nginx-app:latest
+# Push to ECR
+1. docker push \
+     $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/nginx-app:latest
+# Verify
+1. aws ecr describe-images \
+     --repository-name nginx-app \
+     --region us-east-1
+2. aws ecr list-images \
+     --repository-name nginx-app \
+     --region us-east-1   
+# Create Cluster
+1. eksctl create cluster \
+  --name my-cluster \
+  --region us-east-1 \
+  --node-type t3.small \
+  --nodes 1 \
+  --nodes-min 1 \
+  --nodes-max 2 \
+  --managed
+# Verify cluster
+1. eksctl get cluster --region us-east-1
+2. aws eks describe-cluster \
+  --name my-cluster \
+  --region us-east-1 \
+  --query 'cluster.status' \
+  --output text
+# Install the VPC CNI add-on
+1. eksctl create addon \
+  --cluster my-cluster \
+  --region us-east-1 \
+  --name vpc-cni \
+  --force
+2. aws eks list-addons \
+  --cluster-name my-cluster \
+  --region us-east-1
+3. aws eks describe-addon \
+  --cluster-name my-cluster \
+  --addon-name vpc-cni \
+  --region us-east-1 \
+  --query 'addon.[addonName,status,health.issues]' \
+  --output json
+# Also install CoreDNS and kube-proxy
+1. eksctl create addon \
+  --cluster my-cluster \
+  --region us-east-1 \
+  --name kube-proxy
+2. eksctl create addon \
+  --cluster my-cluster \
+  --region us-east-1 \
+  --name coredns
+3. aws eks list-addons \
+  --cluster-name my-cluster \
+  --region us-east-1
+# Check status
+2. for addon in vpc-cni kube-proxy coredns; do
+    echo "=== $addon ==="
+    aws eks describe-addon \
+      --cluster-name my-cluster \
+      --addon-name "$addon" \
+      --region us-east-1 \
+      --query 'addon.[addonName,status,health.issues]' \
+      --output json
+   done
+# Create an EKS cluster with a Managed Node Group
+1. eksctl create nodegroup \
+  --cluster my-cluster \
+  --region us-east-1 \
+  --name my-managed-ng \
+  --node-type t3.micro \
+  --nodes 1 \
+  --nodes-min 1 \
+  --nodes-max 2 \
+  --managed
+# Verify the node group
+1. aws eks describe-nodegroup \
+  --cluster-name my-cluster \
+  --nodegroup-name my-managed-ng \
+  --region us-east-1 \
+  --query 'nodegroup.[status,health.issues]' \
+  --output json
+# Verify the cluster
+1. aws eks list-clusters --region us-east-1
+2. kubectl get nodes
+3. kubectl get pods -A
+# Check the managed node group
+1. eksctl get nodegroup \
+     --cluster my-cluster \
+     --region us-east-1
+2. aws eks list-nodegroups \
+     --cluster-name my-cluster \
+     --region us-east-1
+# Configure kubectl for EKS
+1. aws eks update-kubeconfig \
+     --region us-east-1 \
+     --name my-cluster
+# Verify the Kubernetes context
+1. kubectl config current-context
+2. kubectl cluster-info
+3. kubectl get nodes
+# Create Kubernetes Deployment
+1. mkdir -p k8s
+2. nano k8s/deployment.yaml
+# Replace the account ID
+1. sed -i "s/ACCOUNT_ID/$AWS_ACCOUNT_ID/" k8s/deployment.yaml
+# Create the Kubernetes Service
+1. nano k8s/service.yaml
+# Create namespace
+1. kubectl create namespace microservices
+2. kubectl get namespaces
+# Deploy to EKS
+1. kubectl apply -f k8s/deployment.yaml
+2. kubectl apply -f k8s/service.yaml
+3. kubectl get pods
+# Check the Service
+1. kubectl get svc web-app-lb -n microservices
+# Workflow
+1. EKS cluster
+       ↓
+2. Managed Node Group
+       ↓
+3. ECR repository
+       ↓
+4. Docker build
+       ↓
+5. Docker push → ECR
+       ↓
+6. Kubernetes Deployment
+       ↓
+7. Kubernetes Service
+       ↓
+8. AWS Load Balancer
+       ↓
+9. Test application
+# GitHub Actions
+1. Checkout code
+        ↓
+2. Configure AWS credentials using OIDC
+        ↓
+3. Login to ECR
+        ↓
+4. docker build
+        ↓
+5. docker push → ECR
+        ↓
+6. Connect kubectl → EKS
+        ↓
+7. namespace microservices
+        ↓
+8. Update Kubernetes Deployment
+        ↓
+9. Kubernetes performs rolling update
+        ↓
+10. New Pods start
+# Create the GitHub OIDC provider
+1. aws iam list-open-id-connect-providers
+2. aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --client-id-list sts.amazonaws.com \
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+# Create the IAM policy
+1. aws iam create-policy \
+  --policy-name GitHubActionsECRPolicy \
+  --policy-document file://github-actions-ecr-policy.json
+# verify
+1. aws iam list-open-id-connect-providers
+2. aws eks describe-cluster \
+  --name my-cluster \
+  --region us-east-1 \
+  --query 'cluster.accessConfig' \
+  --output json
+# Create the GitHub Actions trust policy
+1. nano github-actions-trust-policy.json
+# Create the IAM role
+1. aws iam create-role \
+     --role-name github-deploy \
+     --assume-role-policy-document file://github-actions-trust-policy.json
+# Verify role
+1. aws iam get-role \
+     --role-name github-deploy \
+     --query 'Role.Arn' \
+     --output text
+# Update the role
+1. aws iam update-assume-role-policy \
+  --role-name github-deploy \
+  --policy-document file://github-actions-trust-policy.json
+# Give the role ECR permissions
+1. aws iam create-policy \
+  --policy-name GitHubActionsECRPushPolicy \
+  --policy-document file://github-actions-ecr-policy.json
+# attach it to the IAM role
+1. aws iam attach-role-policy \
+  --role-name github-deploy \
+  --policy-arn arn:aws:iam::443920089274:policy/GitHubActionsECRPushPolicy
+# Attach AWS IAM Permissions to the Role
+1. aws iam put-role-policy \
+    --role-name github-deploy \
+    --policy-name eks-describe-permissions \
+    --policy-document file://github-actions-ecr-eks-policy.json
+# Give the role permission to authenticate to EKS
+1. aws eks create-access-entry \
+  --cluster-name my-cluster \
+  --principal-arn arn:aws:iam::443920089274:role/github-deploy \
+  --type STANDARD \
+  --region us-east-1
+# Then associate an EKS access policy:
+aws eks associate-access-policy \
+  --cluster-name my-cluster \
+  --principal-arn arn:aws:iam::443920089274:role/github-deploy \
+  --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+  --access-scope type=cluster \
+  --region us-east-1
+# Verify the access entry
+1. aws eks describe-access-entry \
+  --cluster-name my-cluster \
+  --principal-arn arn:aws:iam::443920089274:role/github-deploy \
+  --region us-east-1
+2. You should see the role associated with the cluster.
+# Add the GitHub secret
+1. AWS_ROLE_ARN
+# Create your workflow
+1. nano .github/workflows/deploy.yml
+2. Push the code
+3. git add .
+4. git commit -m "Deploy nginx to EKS with GitHub Actions"
+5. git push origin main
+# Go to GitHub:
+1. check Repository
+  → Actions
+# Access web application on browser
+1. kubectl get svc nginx-lb
+2. https://external-ip
+# Access locally
+1. curl http://external-ip
+# END
+
+
+
