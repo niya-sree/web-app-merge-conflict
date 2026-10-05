@@ -75,9 +75,11 @@ jobs:
           kubectl apply -f k8s/service.yml -n microservices
 
           kubectl set image deployment/nginx-web-app \
-            nginx-app=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            nginx-app=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -n microservices
 
           kubectl rollout status deployment/nginx-web-app \
+            -n microservices \
             --timeout=180s  
             
 
