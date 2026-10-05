@@ -12,7 +12,7 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:niya-sree/web-app-merge-conflict:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:niya-sree@249565119/web-app-merge-conflict@1404519496:ref:refs/heads/main"
         }
       }
     }
