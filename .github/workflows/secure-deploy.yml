@@ -39,6 +39,7 @@ jobs:
           args: >
             -Dsonar.projectKey=niya-sree_web-app-merge-conflict
             -Dsonar.organization=niya-sree
+            -Dsonar.ci.autoconfig.disabled=true
 
   # ==========================================================
   # 2. BUILD DOCKER IMAGE
